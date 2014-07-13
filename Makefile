@@ -79,19 +79,21 @@ distclean: clean
  
 rebuild: distclean deps compile
 
+export TMPL_REBAR_CONFIG
+export TMPL_GITIGNORE
 new-project: $(REBAR)
 	@echo
 	@read -p "Enter the name of project: " THENAME && \
 	echo && \
 	$(REBAR) create-app appid=$$THENAME && \
-	echo "{sub_dirs, [\"rel\"]}.\n{erl_opts, [debug_info]}.\n{deps, [\n]}.\n{cover_enabled, true}.\n{eunit_opts, [verbose]}." > rebar.config && \
+	echo "$$TMPL_REBAR_CONFIG" | sed "s/PROJECTNAME/$$THENAME/g" > rebar.config && \
 	mkdir rel && \
 	( cd rel && $(REBAR) create-node nodeid=$$THENAME && cd .. ) && \
 	sed -i.tmp "s/^\(.*{app, $$THENAME, .*\)\]\}$$/\\1, {lib_dir, \"..\"}]}/" rel/reltool.config && \
 	rm -f rel/reltool.config.tmp && \
 	sed -i.tmp "s/^\(.*{rel, \"$$THENAME\", \"\)1\(\",\)$$/\\10.1\\2/" rel/reltool.config && \
 	rm -f rel/reltool.config.tmp && \
-	echo "deps\n.eunit\nsubs\nebin/\n.dialyzer_plt\nrel/$$THENAME" > .gitignore
+	echo "$$TMPL_GITIGNORE" | sed "s/PROJECTNAME/$$THENAME/g" > .gitignore
 
 
 # Tools
@@ -118,8 +120,30 @@ install-%-linux:
 install-%:
 	( echo "Please, install $*" | sed "s/-[a-z0-9]*$$//" ; false )
 
+
+# System
+
 .PHONY: all deps update-deps compile doc eunit test \
 	dialyzer typer shell pdf distclean rebuild rebar \
 	generate release rel new-project
 
 
+# Templates
+
+define TMPL_REBAR_CONFIG
+{sub_dirs, ["rel"]}.
+{erl_opts, [debug_info]}.
+{deps, [
+       ]}.
+{cover_enabled, true}.
+{eunit_opts, [verbose]}.
+endef
+
+define TMPL_GITIGNORE
+deps
+.eunit
+subs
+ebin/
+.dialyzer_plt
+rel/PROJECTNAME
+endef
