@@ -75,6 +75,7 @@ clean:
 distclean: clean
 	- rm -rf $(DIALYZER_DEPS_PLT)
 	- rm -rvf $(CURDIR)/deps
+	- rm -f $(CURDIR)/rebar
  
 rebuild: distclean deps compile
 
@@ -90,7 +91,7 @@ new-project: $(REBAR)
 	rm -f rel/reltool.config.tmp && \
 	sed -i.tmp "s/^\(.*{rel, \"$$THENAME\", \"\)1\(\",\)$$/\\10.1\\2/" rel/reltool.config && \
 	rm -f rel/reltool.config.tmp && \
-	echo "deps\n.eunit\nrebar\nsubs\nebin/\n.dialyzer_plt\nrel/$$THENAME" > .gitignore
+	echo "deps\n.eunit\nsubs\nebin/\n.dialyzer_plt\nrel/$$THENAME" > .gitignore
 
 
 # Tools
