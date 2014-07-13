@@ -95,6 +95,14 @@ new-project: $(REBAR)
 	rm -f rel/reltool.config.tmp && \
 	echo "$$TMPL_GITIGNORE" | sed "s/PROJECTNAME/$$THENAME/g" > .gitignore
 
+export TMPL_GEN_SERVER
+gen-server:
+	@echo
+	@read -p "Enter the name of gen_server module: " GENSERVER && \
+	echo && \
+	echo "$$TMPL_GEN_SERVER" | sed "s/GENSERVERNAME/$$GENSERVER/g" > $$GENSERVER.erl && \
+	( mv $$GENSERVER.erl src/ 2>/dev/null || true )
+
 
 # Tools
 
@@ -125,7 +133,7 @@ install-%:
 
 .PHONY: all deps update-deps compile doc eunit test \
 	dialyzer typer shell pdf distclean rebuild rebar \
-	generate release rel new-project
+	generate release rel new-project gen-server
 
 
 # Templates
@@ -146,4 +154,87 @@ subs
 ebin/
 .dialyzer_plt
 rel/PROJECTNAME
+endef
+
+define TMPL_GEN_SERVER
+-module(GENSERVERNAME).
+-behaviour(gen_server).
+
+-export([
+          start/1,
+          start_link/1,
+          stop/0,
+
+          command/0,
+
+          init/1,
+          handle_call/3,
+          handle_cast/2,
+          handle_info/2,
+          code_change/3,
+          terminate/2
+        ]).
+
+-record(state, {
+          %% TODO: define internal state
+        }).
+
+
+%% Exported
+
+start(Options) ->
+    gen_server:start({local, ?MODULE}, ?MODULE, Options, []).
+
+start_link(Options) ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, Options, []).
+
+stop() ->
+    gen_server:call(?MODULE, stop).
+
+command() ->
+    gen_server:call(?MODULE, command).
+
+
+%% Internal
+
+init(_Options) ->
+    %% TODO: process Options, prepare state
+    {ok, #state{}}.
+
+
+handle_call(command, _From, #state{} = State) ->
+    {reply, the_reply, State};
+
+handle_call(stop, _From, #state{} = State) ->
+    {stop, normal, stopped, State};
+
+handle_call(Unexpected, _From, #state{} = State) ->
+    {stop, {error_unexpected, Unexpected}, error_unexpected, State}.
+
+
+handle_cast(command, #state{} = State) ->
+    {noreply, State};
+
+handle_cast(Unexpected, #state{} = State) ->
+    {stop, {error_unexpected, Unexpected}, State}.
+
+
+handle_info(command, #state{} = State) ->
+    {noreply, State};
+
+handle_info(Unexpected, #state{} = State) ->
+    {stop, {error_unexpected, Unexpected}, State}.
+
+
+code_change(_OldVsn, #state{} = State, _Extra) ->
+    {ok, State}.
+
+
+terminate({error_unexpected, _Unexpected}, #state{} = _State) ->
+    %% TODO: report about unexpected
+    ok;
+
+terminate(_Reason, #state{} = _State) ->
+    ok.
+
 endef
