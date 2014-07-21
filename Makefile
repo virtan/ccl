@@ -142,7 +142,9 @@ define TMPL_REBAR_CONFIG
 {sub_dirs, ["rel"]}.
 {erl_opts, [debug_info]}.
 {deps, [
-       ]}.
+        {vutil, ".*", {git, "git://github.com/virtan/vutil.git", ""}},
+	{eper, ".*", {git, "git://github.com/massemanet/eper.git", ""}}
+]}.
 {cover_enabled, true}.
 {eunit_opts, [verbose]}.
 endef
