@@ -91,6 +91,8 @@ new-project: $(REBAR)
 	( cd rel && $(REBAR) create-node nodeid=$$THENAME && cd .. ) && \
 	sed -i.tmp "s/^\(.*{app, $$THENAME, .*\)\]\}$$/\\1, {lib_dir, \"..\"}]}/" rel/reltool.config && \
 	rm -f rel/reltool.config.tmp && \
+	sed -i.tmp "s/^\(.*{lib_dirs, \[\)\(\]\},\)$$/\\1"../deps"\\2/" rel/reltool.config && \
+	rm -f rel/reltool.config.tmp && \
 	sed -i.tmp "s/^\(.*{rel, \"$$THENAME\", \"\)1\(\",\)$$/\\10.1\\2/" rel/reltool.config && \
 	rm -f rel/reltool.config.tmp && \
 	echo "$$TMPL_GITIGNORE" | sed "s/PROJECTNAME/$$THENAME/g" > .gitignore
