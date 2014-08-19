@@ -40,7 +40,7 @@ doc: $(REBAR)
 eunit: $(REBAR) compile
 	$(REBAR) skip_deps=true eunit
 
-test: compile eunit
+test: deps compile eunit
 
 $(DIALYZER_DEPS_PLT): $(ERL)
 	@echo Building local plt at $(DIALYZER_DEPS_PLT)
@@ -108,14 +108,13 @@ gen-server:
 
 # Tools
 
-$(REBAR): $(ERLC) $(GIT) subs
+$(REBAR): $(ERLC) $(GIT)
+	mkdir subs || true
+	rm -rf subs/rebar || true
 	git clone https://github.com/basho/rebar.git subs/rebar
 	cd subs/rebar && ./bootstrap
 	cp subs/rebar/rebar $(REBAR)
 	rm -rf subs/rebar
-
-subs:
-	mkdir -p subs
 
 install-%-darwin:
 	$(BYROOT) port install $* || \
