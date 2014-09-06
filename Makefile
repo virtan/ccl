@@ -41,7 +41,7 @@ eunit: $(REBAR) compile
 	$(REBAR) skip_deps=true eunit
 
 check: test
-test: compile eunit
+test: deps compile eunit
 
 $(DIALYZER_DEPS_PLT): $(ERL)
 	@echo Building local plt at $(DIALYZER_DEPS_PLT)
@@ -92,6 +92,8 @@ new-project: $(REBAR)
 	( cd rel && $(REBAR) create-node nodeid=$$THENAME && cd .. ) && \
 	sed -i.tmp "s/^\(.*{app, $$THENAME, .*\)\]\}$$/\\1, {lib_dir, \"..\"}]}/" rel/reltool.config && \
 	rm -f rel/reltool.config.tmp && \
+	sed -i.tmp "s/^\(.*{lib_dirs, \[\)\(\]\},\)$$/\\1\"..\/deps\"\\2/" rel/reltool.config && \
+	rm -f rel/reltool.config.tmp && \
 	sed -i.tmp "s/^\(.*{rel, \"$$THENAME\", \"\)1\(\",\)$$/\\10.1\\2/" rel/reltool.config && \
 	rm -f rel/reltool.config.tmp && \
 	echo "$$TMPL_GITIGNORE" | sed "s/PROJECTNAME/$$THENAME/g" > .gitignore
@@ -107,14 +109,13 @@ gen-server:
 
 # Tools
 
-$(REBAR): $(ERLC) $(GIT) subs
+$(REBAR): $(ERLC) $(GIT)
+	mkdir subs || true
+	rm -rf subs/rebar || true
 	git clone https://github.com/basho/rebar.git subs/rebar
 	cd subs/rebar && ./bootstrap
 	cp subs/rebar/rebar $(REBAR)
 	rm -rf subs/rebar
-
-subs:
-	mkdir -p subs
 
 install-%-darwin:
 	$(BYROOT) port install $* || \
