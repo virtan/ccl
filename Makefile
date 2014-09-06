@@ -40,6 +40,7 @@ doc: $(REBAR)
 eunit: $(REBAR) compile
 	$(REBAR) skip_deps=true eunit
 
+check: test
 test: compile eunit
 
 $(DIALYZER_DEPS_PLT): $(ERL)
