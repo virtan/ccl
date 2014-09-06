@@ -106,6 +106,13 @@ gen-server:
 	echo "$$TMPL_GEN_SERVER" | sed "s/GENSERVERNAME/$$GENSERVER/g" > $$GENSERVER.erl && \
 	( mv $$GENSERVER.erl src/ 2>/dev/null || true )
 
+update-makefile:
+	mkdir subs || true
+	rm -rf subs/erlang-makefile || true
+	git clone https://github.com/virtan/erlang-makefile.git subs/erlang-makefile
+	cp -f subs/erlang-makefile/Makefile .
+	rm -rf subs/erlang-makefile
+
 
 # Tools
 
