@@ -103,12 +103,20 @@ gen-server:
 	@echo
 	@read -p "Enter the name of gen_server module: " GENSERVER && \
 	echo && \
-	echo "$$TMPL_GEN_SERVER" | sed "s/GENSERVERNAME/$$GENSERVER/g" > $$GENSERVER.erl && \
-	( mv $$GENSERVER.erl src/ 2>/dev/null || true )
+	echo "$$TMPL_GEN_SERVER" | sed "s/GENSERVERNAME/$$GENSERVER/g" > $$GENSERVER.erl
+	-mv $$GENSERVER.erl src/ 2>/dev/null
+
+export TMPL_PORT_CONTROLLER
+port-controller:
+	@echo
+	@read -p "Enter the name of port controller module: " PORTCONTROLLER && \
+	echo && \
+	echo "$$TMPL_PORT_CONTROLLER" | sed "s/PORTNAME/$$PORTCONTROLLER/g" > $$PORTCONTROLLER.erl
+	-mv $$PORTCONTROLLER.erl src/ 2>/dev/null
 
 update-makefile:
-	mkdir subs || true
-	rm -rf subs/erlang-makefile || true
+	-mkdir subs
+	-rm -rf subs/erlang-makefile
 	git clone https://github.com/virtan/erlang-makefile.git subs/erlang-makefile
 	cp -f subs/erlang-makefile/Makefile .
 	rm -rf subs/erlang-makefile
@@ -117,8 +125,8 @@ update-makefile:
 # Tools
 
 $(REBAR): $(ERLC) $(GIT)
-	mkdir subs || true
-	rm -rf subs/rebar || true
+	-mkdir subs
+	-rm -rf subs/rebar
 	git clone https://github.com/basho/rebar.git subs/rebar
 	cd subs/rebar && ./bootstrap
 	cp subs/rebar/rebar $(REBAR)
@@ -246,6 +254,109 @@ terminate({error_unexpected, _Unexpected}, #state{} = _State) ->
     ok;
 
 terminate(_Reason, #state{} = _State) ->
+    ok.
+
+endef
+
+define TMPL_PORT_CONTROLLER
+-module(PORTNAME).
+-behaviour(gen_server).
+
+-export([
+          start/1,
+          start_link/1,
+          stop/0,
+
+          command/0,
+
+          init/1,
+          handle_call/3,
+          handle_cast/2,
+          handle_info/2,
+          code_change/3,
+          terminate/2
+        ]).
+
+-record(state, {
+          port
+        }).
+
+
+%% Exported
+
+start(Options) ->
+    gen_server:start({local, ?MODULE}, ?MODULE, Options, []).
+
+start_link(Options) ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, Options, []).
+
+stop() ->
+    gen_server:call(?MODULE, stop).
+
+send(Data) ->
+    gen_server:call(?MODULE, {send, Data}).
+
+
+%% Internal
+
+init(Options) ->
+    process_flag(trap_exit, true),
+    Exe = proplists:get_value(executable, Options),
+    ExeOpts = proplists:get_value(executable_options, Options,
+                                  [{packet, 4}, exit_status, use_stdio,
+                                   stderr_to_stdout, binary]),
+    Port = open_port({spawn_executable, Exe}, ExeOpts),
+    {ok, #state{port = Port}}.
+
+
+handle_call({send, Data}, From, #state{port = Port} = State) ->
+    Port ! {self(), {command, term_to_binary({From, Data})}},
+    {noreply, State};
+
+handle_call(stop, _From, #state{} = State) ->
+    {stop, normal, stopped, State};
+
+handle_call(Unexpected, _From, #state{} = State) ->
+    {stop, {error_unexpected, Unexpected}, error_unexpected, State}.
+
+
+handle_cast(Unexpected, #state{} = State) ->
+    {stop, {error_unexpected, Unexpected}, State}.
+
+
+handle_info({Port, {data, Data}}, #state{port = Port} = State) ->
+    case binary_to_term(Data) of
+        {From, Data1} ->
+            gen_server:reply(From, Data1);
+        _Error ->
+            do_nothing
+    end,
+    {noreply, State};
+
+handle_info({Port, {exit_status, Status}}, #state{port = Port} = State) ->
+    {stop, exited, State};
+
+handle_info({Port, closed}, #state{port = Port} = State) ->
+    {stop, normal, State};
+
+handle_info({'EXIT', Port, Reason}, #state{port = Port} = State) ->
+    {stop, died, State};
+
+handle_info(Unexpected, #state{} = State) ->
+    {stop, {error_unexpected, Unexpected}, State}.
+
+
+code_change(_OldVsn, #state{} = State, _Extra) ->
+    {ok, State}.
+
+
+terminate({error_unexpected, _Unexpected}, #state{port = Port} = _State) ->
+    catch port_close(Port),
+    %% TODO: report about unexpected
+    ok;
+
+terminate(_Reason, #state{port = Port} = _State) ->
+    catch port_close(Port),
     ok.
 
 endef
