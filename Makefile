@@ -103,16 +103,16 @@ gen-server:
 	@echo
 	@read -p "Enter the name of gen_server module: " GENSERVER && \
 	echo && \
-	echo "$$TMPL_GEN_SERVER" | sed "s/GENSERVERNAME/$$GENSERVER/g" > $$GENSERVER.erl
-	-mv $$GENSERVER.erl src/ 2>/dev/null
+	echo "$$TMPL_GEN_SERVER" | sed "s/GENSERVERNAME/$$GENSERVER/g" > $$GENSERVER.erl && \
+	mv $$GENSERVER.erl src/ 2>/dev/null
 
 export TMPL_PORT_CONTROLLER
 port-controller:
 	@echo
 	@read -p "Enter the name of port controller module: " PORTCONTROLLER && \
 	echo && \
-	echo "$$TMPL_PORT_CONTROLLER" | sed "s/PORTNAME/$$PORTCONTROLLER/g" > $$PORTCONTROLLER.erl
-	-mv $$PORTCONTROLLER.erl src/ 2>/dev/null
+	echo "$$TMPL_PORT_CONTROLLER" | sed "s/PORTNAME/$$PORTCONTROLLER/g" > $$PORTCONTROLLER.erl && \
+	mv $$PORTCONTROLLER.erl src/ 2>/dev/null
 
 update-makefile:
 	-mkdir subs
