@@ -1,0 +1,13 @@
+{application, ccl,
+ [
+  {description, ""},
+  {vsn, "1"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib,
+                  exec
+                 ]},
+  {mod, { ccl_app, []}},
+  {env, []}
+ ]}.

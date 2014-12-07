@@ -62,7 +62,7 @@ shell: $(REBAR) $(ERL) deps compile
 # fails (thats probably why You want them in the shell). This
 # runs eunit but tells make to ignore the result.
 	- @$(REBAR) skip_deps=true eunit
-	@$(ERL) $(ERLFLAGS)
+	@$(ERL) $(ERLFLAGS) -sname cclshell@localhost
    
 pdf: $(PANDOC)
 	$(PANDOC) README.md -o README.pdf
