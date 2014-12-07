@@ -16,6 +16,7 @@
           terminate/2,
 
           activate/2,
+          deactivate/2,
           weird_func/0
         ]).
 
@@ -26,6 +27,7 @@
 
 -record(node, {
           name,
+          node_name,
           connectto,
           epmd_port,
           node_port,
@@ -67,24 +69,23 @@ init(Options) ->
     application:ensure_started(exec),
     ConfFile = proplists:get_value(conf_file, Options, "conf/ccl.conf"),
     Configured = case file:consult(ConfFile) of
-        {ok, Configured1} -> [#node{name = Name, connectto = ConnectTo, state = State}
+        {ok, Configured1} -> [#node{name = Name, node_name = node_atom(Name),
+                                    connectto = ConnectTo, state = State}
                               || {Name, ConnectTo, State} <- Configured1];
         {error, _} -> []
     end,
-    self() ! connection_try,
+    ?MODULE ! connection_try,
     {ok, #state{conf_file = ConfFile, configured = Configured}}.
 
 
 handle_call({set_node_monitor, Node}, _From, #state{} = State) ->
-    io:format("set monitor for ~p~n", [Node]),
     catch erlang:monitor_node(Node, true),
     {reply, ok, State};
 
 handle_call({del_node_monitor, Node}, _From, #state{} = State) ->
-    io:format("unset monitor for ~p~n", [Node]),
     catch erlang:monitor_node(Node, false),
     receive
-        {nodedown,ef1@localhost} -> ignore
+        {nodedown, Node} -> ignore
     after 0 -> ignore
     end,
     {reply, ok, State};
@@ -107,7 +108,7 @@ handle_cast(Unexpected, #state{} = State) ->
 
 handle_info(connection_try, #state{configured = Configured} = State) ->
     [activate(Node) || Node <- Configured, Node#node.state == use],
-    erlang:send_after(60000, self(), connection_try),
+    erlang:send_after(60000, ?MODULE, connection_try),
     {noreply, State};
 
 handle_info({status_update, #node{name = NodeName} = NodeStatus},
@@ -119,6 +120,12 @@ handle_info({status_update, #node{name = NodeName} = NodeStatus},
     State1 = State#state{configured = Configured1},
     %%sync_conf(State1),
     {noreply, State1};
+
+handle_info({nodedown, NodeAtom}, #state{configured = Configured} = State) ->
+    [DownNode] = [ConfiguredNode || ConfiguredNode <- Configured,
+                                    ConfiguredNode#node.node_name == NodeAtom],
+    deactivate(DownNode),
+    {noreply, State};
 
 handle_info(Unexpected, #state{} = State) ->
     {stop, {error_unexpected, Unexpected}, State}.
@@ -145,7 +152,6 @@ activate(spawned, Node) ->
     try 
         [begin
              Node1 = get(status),
-             io:format("~p~n", [OperationF]),
              case OperationF(Node1) of
                  Node1 -> no_changes;
                  Node2 ->
@@ -160,16 +166,29 @@ activate(spawned, Node) ->
                                 fun make_node_tunnel/1,
                                 fun connect_node/1,
                                 fun ask_to_set_node_monitor/1,
+                                fun load_modules/1,
                                 fun set_on/1]]
     catch
         T:E ->
             NodeX = get(status),
-            %case cleanup(NodeX) of
-            %    NodeX -> just_die;
-            %    NodeY -> ?MODULE ! {status_update, NodeY}
-            %end,
-            io:format("~p:~p~n~p~n", [T, E, erlang:get_stacktrace()])
+            case cleanup(NodeX) of
+                NodeX -> just_die;
+                NodeY -> ?MODULE ! {status_update, NodeY}
+            end,
+            log_error("~p:~p~n~p~n", [T, E, erlang:get_stacktrace()])
     end.
+
+deactivate(Node) ->
+    spawn(?MODULE, deactivate, [spawned, Node]).
+
+deactivate(spawned, Node) ->
+    Node1 = cleanup(Node),
+    ?MODULE ! {status_update, Node1},
+    ?MODULE ! connection_try,
+    log_error("~s disconnected~n", [Node#node.name]).
+
+log_error(Fmt, Args) ->
+    io:format(Fmt, Args).
 
 set_in_progress(Node) ->
     Node#node{state = in_progress}.
@@ -214,6 +233,7 @@ run_remote_node(#node{name = Name,
             "/usr/bin/env erl ",
             "-sname ", Name, "@localhost ",
             "-setcookie ", Cookie, " ",
+            "-master ", atom_to_list(node()), " ",
             "-noinput"]
         ), []),
     Node#node{remote_node_pid = OSPid}.
@@ -238,9 +258,7 @@ make_node_tunnel(#node{name = Name,
 node_atom(Name) ->
     list_to_atom(lists:flatten([Name, "@localhost"])).
 
-connect_node(#node{name = Name, cookie = Cookie} = Node) ->
-    NodeAtom = node_atom(Name),
-    io:format("connecting to ~p~n", [NodeAtom]),
+connect_node(#node{name = Name, node_name = NodeAtom, cookie = Cookie} = Node) ->
     erlang:set_cookie(NodeAtom, list_to_atom(Cookie)),
     pong = vutil:run_wait(3000, 100, fun() ->
                 case net_adm:ping(NodeAtom) of
@@ -250,12 +268,19 @@ connect_node(#node{name = Name, cookie = Cookie} = Node) ->
                                      end),
     Node.
 
-ask_to_set_node_monitor(#node{name = Name} = Node) ->
-    set_node_monitor(node_atom(Name)),
+ask_to_set_node_monitor(#node{node_name = NodeAtom} = Node) ->
+    set_node_monitor(NodeAtom),
     Node.
 
-ask_to_del_node_monitor(#node{name = Name} = Node) ->
-    del_node_monitor(node_atom(Name)),
+ask_to_del_node_monitor(#node{node_name = NodeAtom} = Node) ->
+    del_node_monitor(NodeAtom),
+    Node.
+
+load_modules(#node{node_name = NodeAtom} = Node) ->
+    RemoteModules = rpc:call(NodeAtom, erlang, loaded, []),
+    RMSet = sets:from_list(RemoteModules),
+    ModulesToSend =
+        [LocalModule || LocalModule <- erlang:loaded(), not sets:is_element(LocalModule, RMSet)],
     Node.
 
 optional_action(undefined, _) -> done;
