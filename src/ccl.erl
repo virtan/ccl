@@ -34,6 +34,7 @@
           epmd_tunnel_pid,
           node_tunnel_pid,
           remote_node_pid,
+          our_tunnel_pid,
           cookie,
           state = use
          }).
@@ -162,9 +163,10 @@ activate(spawned, Node) ->
                                 fun set_in_progress/1,
                                 fun gen_random_cookie/1,
                                 fun make_epmd_tunnel/1,
-                                fun run_remote_node/1,
                                 fun make_node_tunnel/1,
-                                fun connect_node/1,
+                                fun run_remote_node/1,
+                                fun make_our_tunnel/1,
+                                fun check_node_connection/1,
                                 fun ask_to_set_node_monitor/1,
                                 fun load_modules/1,
                                 fun set_on/1]]
@@ -188,7 +190,8 @@ deactivate(spawned, Node) ->
     log_error("~s disconnected~n", [Node#node.name]).
 
 log_error(Fmt, Args) ->
-    io:format(Fmt, Args).
+    %io:format(Fmt, Args).
+    ok.
 
 set_in_progress(Node) ->
     Node#node{state = in_progress}.
@@ -196,8 +199,10 @@ set_in_progress(Node) ->
 set_on(Node) ->
     Node#node{state = on}.
 
-gen_random_cookie(Node) ->
-    Node#node{cookie = vutil:any_to_list(base64:encode(crypto:rand_bytes(60)))}.
+gen_random_cookie(#node{node_name = NodeAtom} = Node) ->
+    Cookie = vutil:any_to_list(base64:encode(crypto:rand_bytes(60))),
+    erlang:set_cookie(NodeAtom, list_to_atom(Cookie)),
+    Node#node{cookie = Cookie}.
 
 sync_conf(#state{conf_file = ConfFile, configured = Configured}) ->
     Data = [io_lib:format("~p.~n", [{Node#node.name, Node#node.connectto,
@@ -238,28 +243,38 @@ run_remote_node(#node{name = Name,
         ), []),
     Node#node{remote_node_pid = OSPid}.
 
-make_node_tunnel(#node{name = Name,
-                       connectto = ConnectTo} = Node) ->
+make_node_tunnel(#node{connectto = ConnectTo} = Node) ->
+    {ok, Names} = net_adm:names(),
+    [OurName | _] = string:tokens(atom_to_list(node()), "@"),
+    [Port1] = [Port || {Name1, Port} <- Names, Name1 == OurName],
+    {ok, _Pid, OSPid} = exec:run(lists:flatten(
+        ["/usr/bin/env ssh ",
+         "-nNTR ", integer_to_list(Port1), ":localhost:",
+            integer_to_list(Port1), " ",
+         ConnectTo]
+        ), []),
+    Node#node{node_tunnel_pid = OSPid}.
+
+make_our_tunnel(#node{name = Name, connectto = ConnectTo} = Node) ->
     [Port1] = vutil:run_wait(10000, 200, fun() ->
             {ok, Names} = net_adm:names(),
             case [Port || {Name1, Port} <- Names, Name1 == Name] of
                 [] -> wait;
                 Other -> Other
             end
-        end),
+                                         end),
     {ok, _Pid, OSPid} = exec:run(lists:flatten(
         ["/usr/bin/env ssh ",
          "-nNTL ", integer_to_list(Port1), ":localhost:",
-            integer_to_list(Port1), " ",
+         integer_to_list(Port1), " ",
          ConnectTo]
-        ), []),
-    Node#node{node_port = Port1, node_tunnel_pid = OSPid}.
+                                  ), []),
+    Node#node{node_port = Port1, our_tunnel_pid = OSPid}.
 
 node_atom(Name) ->
     list_to_atom(lists:flatten([Name, "@localhost"])).
 
-connect_node(#node{name = Name, node_name = NodeAtom, cookie = Cookie} = Node) ->
-    erlang:set_cookie(NodeAtom, list_to_atom(Cookie)),
+check_node_connection(#node{node_name = NodeAtom} = Node) ->
     pong = vutil:run_wait(3000, 100, fun() ->
                 case net_adm:ping(NodeAtom) of
                     pong -> pong;
@@ -279,8 +294,22 @@ ask_to_del_node_monitor(#node{node_name = NodeAtom} = Node) ->
 load_modules(#node{node_name = NodeAtom} = Node) ->
     RemoteModules = rpc:call(NodeAtom, erlang, loaded, []),
     RMSet = sets:from_list(RemoteModules),
-    ModulesToSend =
-        [LocalModule || LocalModule <- erlang:loaded(), not sets:is_element(LocalModule, RMSet)],
+    ModulesToSend = [{LocalModule, Path} || {LocalModule, Path} <- code:all_loaded(),
+                                            not sets:is_element(LocalModule, RMSet)],
+    Package = [begin
+                   {ok, Binary} = file:read_file(Path),
+                   [LocalModule, Path, Binary]
+               end || {LocalModule, Path} <- ModulesToSend],
+    rpc:call(NodeAtom, application, set_env, [kernel, raw_files, false]),
+    Loaded = vutil:pmap(fun([M, _, _] = Args) ->
+                                case rpc:call(NodeAtom, code, load_file, [M]) of
+                                    {module, M} = LoadedLocally ->
+                                        {M, LoadedLocally};
+                                    _ ->
+                                        {M, rpc:call(NodeAtom, code, load_binary, Args)}
+                                end
+                        end, Package),
+    [] = [{M, NotLoaded} || {M, {Res, NotLoaded}} <- Loaded, Res /= module],
     Node.
 
 optional_action(undefined, _) -> done;
@@ -289,18 +318,21 @@ optional_action(Defined, F) -> F(Defined).
 cleanup(#node{state = off} = Node) -> Node;
 cleanup(#node{epmd_tunnel_pid = EPMDPid,
               node_tunnel_pid = NodeTunnelPid,
+              our_tunnel_pid = OurTunnelPid,
               remote_node_pid = RemoteNodePid} = Node) ->
     ask_to_del_node_monitor(Node),
     SIGQUIT = 3,
     KillerF = fun(Pid) -> exec:kill(Pid, SIGQUIT) end,
     optional_action(RemoteNodePid, KillerF),
     optional_action(NodeTunnelPid, KillerF),
+    optional_action(OurTunnelPid, KillerF),
     optional_action(EPMDPid, KillerF),
     Node#node{epmd_port = undefined,
-              node_port = undefined,
               epmd_tunnel_pid = undefined,
               node_tunnel_pid = undefined,
               remote_node_pid = undefined,
+              our_tunnel_pid = undefined,
+              node_port = undefined,
               cookie = undefined,
               state = use};
 cleanup(Nodes) when is_list(Nodes) ->
