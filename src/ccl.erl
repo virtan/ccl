@@ -68,13 +68,19 @@ del_node_monitor(Node) ->
 
 init(Options) ->
     application:ensure_started(exec),
-    ConfFile = proplists:get_value(conf_file, Options, "conf/ccl.conf"),
-    Configured = case file:consult(ConfFile) of
-        {ok, Configured1} -> [#node{name = Name, node_name = node_atom(Name),
-                                    connectto = ConnectTo, state = State}
-                              || {Name, ConnectTo, State} <- Configured1];
-        {error, _} -> []
-    end,
+    {ConfFile, ConfData} = case proplists:get_value(config_from_environment, Options) of
+                               undefined ->
+                                   {ok, Val} = file:consult("conf/ccl.conf"),
+                                   {"conf/ccl.conf", Val};
+                               _ ->
+                                   case application:get_env(?MODULE, slaves) of
+                                       undefined -> {undefined, []};
+                                       {ok, Val} -> {undefined, Val}
+                                   end
+                           end,
+    Configured = [#node{name = Name, node_name = node_atom(Name),
+                        connectto = ConnectTo, state = State}
+                  || {Name, ConnectTo, State} <- ConfData],
     ?MODULE ! connection_try,
     {ok, #state{conf_file = ConfFile, configured = Configured}}.
 
