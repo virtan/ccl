@@ -3,9 +3,7 @@
 
 -export([
           start/0,
-          start/1,
           start_link/0,
-          start_link/1,
           stop/0,
 
           init/1,
@@ -14,6 +12,8 @@
           handle_info/2,
           code_change/3,
           terminate/2,
+
+          get_env/2,
 
           activate/2,
           deactivate/2,
@@ -43,16 +43,12 @@
 %% Exported
 
 start() ->
-    start([]).
-
-start(Options) ->
-    gen_server:start({local, ?MODULE}, ?MODULE, Options, []).
+    application:ensure_started(exec),
+    gen_server:start({local, ?MODULE}, ?MODULE, [], []).
 
 start_link() ->
-    start_link([]).
-
-start_link(Options) ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, Options, []).
+    application:ensure_started(exec),
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 stop() ->
     gen_server:call(?MODULE, stop).
@@ -63,20 +59,25 @@ set_node_monitor(Node) ->
 del_node_monitor(Node) ->
     gen_server:call(?MODULE, {del_node_monitor, Node}).
 
+get_env(Key, Default) ->
+    case application:get_application(?MODULE) of
+        undefined -> Default;
+        {ok, App} ->
+            case application:get_env(App, Key) of
+                undefined -> Default;
+                {ok, Value} -> Value
+            end
+    end.
+
 
 %% Internal
 
-init(Options) ->
-    application:ensure_started(exec),
-    {ConfFile, ConfData} = case proplists:get_value(config_from_environment, Options) of
-                               undefined ->
-                                   {ok, Val} = file:consult("conf/ccl.conf"),
-                                   {"conf/ccl.conf", Val};
-                               _ ->
-                                   case application:get_env(?MODULE, slaves) of
-                                       undefined -> {undefined, []};
-                                       {ok, Val} -> {undefined, Val}
-                                   end
+init([]) ->
+    {ConfFile, ConfData} = case get_env(file, undefined) of
+                               undefined -> {undefined, get_env(slaves, [])};
+                               FileName ->
+                                   {ok, Val} = file:consult(FileName),
+                                   {FileName, Val}
                            end,
     Configured = [#node{name = Name, node_name = node_atom(Name),
                         connectto = ConnectTo, state = State}
@@ -195,7 +196,7 @@ deactivate(spawned, Node) ->
     ?MODULE ! connection_try,
     log_error("~s disconnected~n", [Node#node.name]).
 
-log_error(Fmt, Args) ->
+log_error(_Fmt, _Args) ->
     %io:format(Fmt, Args).
     ok.
 
