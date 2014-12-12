@@ -39,7 +39,6 @@
           state = use
          }).
 
-
 %% Exported
 
 start() ->
@@ -196,8 +195,8 @@ deactivate(spawned, Node) ->
     ?MODULE ! connection_try,
     log_error("~s disconnected~n", [Node#node.name]).
 
-log_error(_Fmt, _Args) ->
-    %io:format(Fmt, Args).
+log_error(Fmt, Args) ->
+    io:format(Fmt, Args),
     ok.
 
 set_in_progress(Node) ->
@@ -221,8 +220,19 @@ simplify_state(off) -> off;
 simplify_state(_) -> use.
 
 get_our_epmd() ->
-    %% erl_epmd
-    {"localhost", 4369}.
+    Port = case init:get_argument(epmd_port) of
+               {ok, [[PortStr|_]|_]} when is_list(PortStr) ->
+                   list_to_integer(PortStr);
+               error ->
+                   4369
+           end,
+    {"localhost", Port}.
+
+get_epmd_entries() ->
+    {EPMDHost, _} = get_our_epmd(),
+    {ok, {hostent, _Name, _ , _Af, _Size, [EPMDAddr | _]}} = inet:gethostbyname(EPMDHost),
+    {ok, Entries} = erl_epmd:names(EPMDAddr),
+    Entries.
 
 make_epmd_tunnel(#node{connectto = ConnectTo} = Node) ->
     RemPort = 4000 + random:uniform(20000),
@@ -251,7 +261,7 @@ run_remote_node(#node{name = Name,
     Node#node{remote_node_pid = OSPid}.
 
 make_node_tunnel(#node{connectto = ConnectTo} = Node) ->
-    {ok, Names} = net_adm:names(),
+    Names = get_epmd_entries(),
     [OurName | _] = string:tokens(atom_to_list(node()), "@"),
     [Port1] = [Port || {Name1, Port} <- Names, Name1 == OurName],
     {ok, _Pid, OSPid} = exec:run(lists:flatten(
@@ -264,7 +274,7 @@ make_node_tunnel(#node{connectto = ConnectTo} = Node) ->
 
 make_our_tunnel(#node{name = Name, connectto = ConnectTo} = Node) ->
     [Port1] = vutil:run_wait(10000, 200, fun() ->
-            {ok, Names} = net_adm:names(),
+            Names = get_epmd_entries(),
             case [Port || {Name1, Port} <- Names, Name1 == Name] of
                 [] -> wait;
                 Other -> Other
