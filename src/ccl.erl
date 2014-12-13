@@ -315,7 +315,6 @@ load_modules(#node{node_name = NodeAtom} = Node) ->
     RMSet = sets:from_list(RemoteModules),
     ModulesToSend = [{LocalModule, Path} || {LocalModule, Path} <- code:all_loaded(),
                                             not sets:is_element(LocalModule, RMSet)],
-    io:format("modules to send ~p~n", [ModulesToSend]),
     Package = [begin
                    {ok, Binary} = file:read_file(Path),
                    [LocalModule, Path, Binary]
