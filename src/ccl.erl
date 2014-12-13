@@ -311,9 +311,11 @@ ask_to_del_node_monitor(#node{node_name = NodeAtom} = Node) ->
 
 load_modules(#node{node_name = NodeAtom} = Node) ->
     RemoteModules = rpc:call(NodeAtom, erlang, loaded, []),
+    io:format("modules on ~p: ~p~n", [NodeAtom, RemoteModules]),
     RMSet = sets:from_list(RemoteModules),
     ModulesToSend = [{LocalModule, Path} || {LocalModule, Path} <- code:all_loaded(),
                                             not sets:is_element(LocalModule, RMSet)],
+    io:format("modules to send ~p~n", [ModulesToSend]),
     Package = [begin
                    {ok, Binary} = file:read_file(Path),
                    [LocalModule, Path, Binary]
