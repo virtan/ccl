@@ -142,11 +142,12 @@ code_change(_OldVsn, #state{} = State, _Extra) ->
     {ok, State}.
 
 
-terminate({error_unexpected, _Unexpected}, #state{} = _State) ->
-    %% TODO: report about unexpected
+terminate({error_unexpected, _Unexpected}, #state{configured = Configured} = _State) ->
+    cleanup(Configured),
     ok;
 
-terminate(_Reason, #state{} = _State) ->
+terminate(_Reason, #state{configured = Configured} = _State) ->
+    cleanup(Configured),
     ok.
 
 
