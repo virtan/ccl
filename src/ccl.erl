@@ -86,7 +86,7 @@ init([]) ->
 
 
 handle_call({set_node_monitor, Node}, _From, #state{} = State) ->
-    catch erlang:monitor_node(Node, true),
+    erlang:monitor_node(Node, true),
     {reply, ok, State};
 
 handle_call({del_node_monitor, Node}, _From, #state{} = State) ->
