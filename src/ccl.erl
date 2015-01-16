@@ -36,6 +36,7 @@
           remote_node_pid,
           our_tunnel_pid,
           cookie,
+          modules_copied,
           state = use
          }).
 
@@ -82,6 +83,7 @@ init([]) ->
                         connectto = ConnectTo, state = State}
                   || {Name, ConnectTo, State} <- ConfData],
     ?MODULE ! connection_try,
+    ?MODULE ! sync_modules,
     {ok, #state{conf_file = ConfFile, configured = Configured}}.
 
 
@@ -117,6 +119,11 @@ handle_info(connection_try, #state{configured = Configured} = State) ->
     [activate(Node) || Node <- Configured, Node#node.state == use],
     erlang:send_after(60000, ?MODULE, connection_try),
     {noreply, State};
+
+handle_info(sync_modules, #state{configured = Configured} = State) ->
+    Configured1 = [Node || Node <- Configured, Node#node.state =/= on] ++ [load_modules(Node) || Node <- Configured, Node#node.state == on],
+    erlang:send_after(16311, ?MODULE, sync_modules),
+    {noreply, State#state{configured = Configured1}};
 
 handle_info({status_update, #node{name = NodeName} = NodeStatus},
             #state{configured = Configured} = State) ->
@@ -309,26 +316,32 @@ ask_to_del_node_monitor(#node{node_name = NodeAtom} = Node) ->
     del_node_monitor(NodeAtom),
     Node.
 
-load_modules(#node{node_name = NodeAtom} = Node) ->
+load_modules(#node{node_name = NodeAtom, modules_copied = undefined}) ->
     RemoteModules = rpc:call(NodeAtom, erlang, loaded, []),
+    rpc:call(NodeAtom, application, set_env, [kernel, raw_files, false]),
+    load_modules(#node{modules_copied = RemoteModules});
+load_modules(#node{node_name = NodeAtom, modules_copied = RemoteModules} = Node) ->
     RMSet = sets:from_list(RemoteModules),
     ModulesToSend = [{LocalModule, Path} || {LocalModule, Path} <- code:all_loaded(),
                                             not sets:is_element(LocalModule, RMSet)],
-    Package = [begin
-                   {ok, Binary} = file:read_file(Path),
-                   [LocalModule, Path, Binary]
-               end || {LocalModule, Path} <- ModulesToSend],
-    rpc:call(NodeAtom, application, set_env, [kernel, raw_files, false]),
-    Loaded = vutil:pmap(fun([M, _, _] = Args) ->
-                                case rpc:call(NodeAtom, code, load_file, [M]) of
-                                    {module, M} = LoadedLocally ->
-                                        {M, LoadedLocally};
-                                    _ ->
-                                        {M, rpc:call(NodeAtom, code, load_binary, Args)}
-                                end
-                        end, Package),
-    [] = [{M, NotLoaded} || {M, {Res, NotLoaded}} <- Loaded, Res /= module],
-    Node.
+    case ModulesToSend of
+        [] -> Node;
+        _ ->
+            Package = [begin
+                           {ok, Binary} = file:read_file(Path),
+                           [LocalModule, Path, Binary]
+                       end || {LocalModule, Path} <- ModulesToSend],
+            Loaded = vutil:pmap(fun([M, _, _] = Args) ->
+                                        case rpc:call(NodeAtom, code, load_file, [M]) of
+                                            {module, M} = LoadedLocally ->
+                                                {M, LoadedLocally};
+                                            _ ->
+                                                {M, rpc:call(NodeAtom, code, load_binary, Args)}
+                                        end
+                                end, Package),
+            [] = [{M, NotLoaded} || {M, {Res, NotLoaded}} <- Loaded, Res /= module],
+            Node#node{modules_copied = RemoteModules ++ [M || {M, _} <- ModulesToSend]}
+    end.
 
 optional_action(undefined, _) -> done;
 optional_action(Defined, F) -> F(Defined).
