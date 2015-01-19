@@ -316,10 +316,10 @@ ask_to_del_node_monitor(#node{node_name = NodeAtom} = Node) ->
     del_node_monitor(NodeAtom),
     Node.
 
-load_modules(#node{node_name = NodeAtom, modules_copied = undefined}) ->
+load_modules(#node{node_name = NodeAtom, modules_copied = undefined} = Node) ->
     RemoteModules = rpc:call(NodeAtom, erlang, loaded, []),
     rpc:call(NodeAtom, application, set_env, [kernel, raw_files, false]),
-    load_modules(#node{modules_copied = RemoteModules});
+    load_modules(Node#node{modules_copied = RemoteModules});
 load_modules(#node{node_name = NodeAtom, modules_copied = RemoteModules} = Node) ->
     RMSet = sets:from_list(RemoteModules),
     ModulesToSend = [{LocalModule, Path} || {LocalModule, Path} <- code:all_loaded(),
