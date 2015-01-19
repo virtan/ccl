@@ -365,6 +365,7 @@ cleanup(#node{epmd_tunnel_pid = EPMDPid,
               our_tunnel_pid = undefined,
               node_port = undefined,
               cookie = undefined,
+              modules_copied = undefined,
               state = use};
 cleanup(Nodes) when is_list(Nodes) ->
     [cleanup(Node) || Node <- Nodes].
