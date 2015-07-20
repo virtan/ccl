@@ -116,6 +116,7 @@ handle_cast(Unexpected, #state{} = State) ->
 
 
 handle_info(connection_try, #state{configured = Configured} = State) ->
+    check_clean_nodes(Configured),
     [activate(Node) || Node <- Configured, Node#node.state == use],
     erlang:send_after(60000, ?MODULE, connection_try),
     {noreply, State};
@@ -157,6 +158,12 @@ terminate(_Reason, #state{configured = Configured} = _State) ->
     cleanup(Configured),
     ok.
 
+
+check_clean_nodes(Configured) ->
+    [case net_adm:ping(Node#node.node_name) of
+         pong -> ok;
+         _ -> deactivate(Node#node.node_name)
+     end || Node <- Configured, Node#node.state == on].
 
 activate(Node) ->
     spawn(?MODULE, activate, [spawned, Node]).
@@ -200,7 +207,6 @@ deactivate(Node) ->
 deactivate(spawned, Node) ->
     Node1 = cleanup(Node),
     ?MODULE ! {status_update, Node1},
-    ?MODULE ! connection_try,
     log_error("~s disconnected~n", [Node#node.name]).
 
 log_error(Fmt, Args) ->
