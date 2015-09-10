@@ -162,7 +162,7 @@ terminate(_Reason, #state{configured = Configured} = _State) ->
 check_clean_nodes(Configured) ->
     [case net_adm:ping(Node#node.node_name) of
          pong -> ok;
-         _ -> deactivate(Node#node.node_name)
+         _ -> deactivate(Node)
      end || Node <- Configured, Node#node.state == on].
 
 activate(Node) ->
